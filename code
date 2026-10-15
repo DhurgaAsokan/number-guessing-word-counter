@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Number Guessing Game & Word Counter</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: Arial, sans-serif; background: #eef2f7; margin: 0;
+      min-height: 100vh; display: flex; justify-content: center;
+      align-items: center; padding: 16px;
+    }
+    .card {
+      background: #fff; width: 100%; max-width: 460px; border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); padding: 24px;
+    }
+    h1 { font-size: 1.3rem; text-align: center; margin: 0 0 16px; color: #1f3a5f; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 18px; }
+    .tabs button {
+      flex: 1; padding: 10px 4px; border: none; border-radius: 6px;
+      background: #dde5f0; color: #1f3a5f; cursor: pointer; font-size: 0.95rem;
+    }
+    .tabs button.active { background: #1f3a5f; color: #fff; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    label { display: block; margin: 10px 0 4px; font-size: 0.85rem; color: #444; }
+    input, select, textarea {
+      width: 100%; padding: 10px; font-size: 1rem;
+      border: 1px solid #b9c4d4; border-radius: 6px; font-family: inherit;
+    }
+    textarea { height: 110px; resize: vertical; }
+    .go {
+      width: 100%; margin-top: 14px; padding: 11px; border: none; border-radius: 6px;
+      background: #2e7d32; color: #fff; font-size: 1rem; cursor: pointer;
+    }
+    .go.blue { background: #1f3a5f; }
+    .result {
+      margin-top: 14px; padding: 12px; border-radius: 6px;
+      background: #f1f6ee; text-align: center; min-height: 20px;
+    }
+    .result.error { background: #fdecea; color: #b71c1c; font-weight: bold; }
+    .stats { display: flex; justify-content: space-between; margin-top: 12px; font-size: 0.85rem; color: #444; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { text-align: left; padding: 6px; border-bottom: 1px solid #e1e7ef; font-size: 0.9rem; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Number Guessing Game & Word Counter</h1>
+
+    <div class="tabs">
+      <button class="active" data-tab="game">Guessing Game</button>
+      <button data-tab="words">Word Counter</button>
+    </div>
+
+    <!-- Guessing game -->
+    <div class="panel active" id="game">
+      <div id="setup">
+        <label for="level">Choose a level</label>
+        <select id="level">
+          <option value="1">Easy (1-10, 5 attempts)</option>
+          <option value="2">Medium (1-50, 7 attempts)</option>
+          <option value="3">Hard (1-100, 10 attempts)</option>
+        </select>
+        <button class="go" id="startBtn">Start Game</button>
+      </div>
+
+      <div id="play" class="hidden">
+        <label for="guess" id="guessLabel">Your guess</label>
+        <input type="text" id="guess" placeholder="Enter a number">
+        <button class="go" id="guessBtn">Guess</button>
+        <button class="go blue hidden" id="againBtn">Play Again</button>
+      </div>
+
+      <div class="result" id="gameMsg">Pick a level and press Start.</div>
+      <div class="stats">
+        <span>Attempts left: <b id="attemptsLeft">-</b></span>
+        <span>Total: <b id="totalScore">0</b></span>
+        <span>Best: <b id="bestScore">0</b></span>
+      </div>
+    </div>
+
+    <!-- Word counter -->
+    <div class="panel" id="words">
+      <label for="fileInput">Upload a .txt file</label>
+      <input type="file" id="fileInput" accept=".txt">
+      <label for="textInput">Or paste your text here</label>
+      <textarea id="textInput" placeholder="Type or paste text..."></textarea>
+      <button class="go" id="countBtn">Count Words</button>
+      <button class="go blue" id="sampleBtn">Use Sample Text</button>
+      <div class="result" id="wordMsg"></div>
+      <div id="report"></div>
+    </div>
+  </div>
+
+  <script>
+    // level -> [highest number, maximum attempts]
+    const LEVELS = { "1": [10, 5], "2": [50, 7], "3": [100, 10] };
+    const SAMPLE_TEXT = "Python is a simple language. Python is easy to learn, and Python is used for web development, data analysis and machine learning. Learning Python is fun!";
+
+    // ---------- Tabs ----------
+    document.querySelectorAll(".tabs button").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        document.querySelectorAll(".tabs button").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(btn.dataset.tab).classList.add("active");
+      });
+    });
+
+    function show(id, message, isError) {
+      const box = document.getElementById(id);
+      box.textContent = message;
+      box.className = isError ? "result error" : "result";
+    }
+
+    // ---------- Number Guessing Game ----------
+    let secret = 0, highest = 0, maxAttempts = 0, attempts = 0;
+    let totalScore = 0, bestScore = 0, gameOver = false;
+
+    function calculateScore(attemptsUsed) {
+      // 100 points for a first-try win, minus 10 per extra attempt (minimum 10)
+      return Math.max(10, 100 - (attemptsUsed - 1) * 10);
+    }
+
+    function startRound() {
+      const level = document.getElementById("level").value;
+      highest = LEVELS[level][0];
+      maxAttempts = LEVELS[level][1];
+      secret = Math.floor(Math.random() * highest) + 1;   // random number
+      attempts = 0;
+      gameOver = false;
+
+      document.getElementById("setup").classList.add("hidden");
+      document.getElementById("play").classList.remove("hidden");
+      document.getElementById("guessBtn").classList.remove("hidden");
+      document.getElementById("againBtn").classList.add("hidden");
+      document.getElementById("guess").value = "";
+      document.getElementById("guessLabel").textContent = "Guess a number between 1 and " + highest;
+      document.getElementById("attemptsLeft").textContent = maxAttempts;
+      show("gameMsg", "You have " + maxAttempts + " attempts. Good luck!", false);
+    }
+
+    function endRound() {
+      gameOver = true;
+      document.getElementById("guessBtn").classList.add("hidden");
+      document.getElementById("againBtn").classList.remove("hidden");
+    }
+
+    function makeGuess() {
+      if (gameOver) return;
+      const text = document.getElementById("guess").value.trim();
+
+      // validation: whole number within range
+      if (text === "" || !/^\d+$/.test(text)) {
+        show("gameMsg", "Please enter a whole number.", true);
+        return;
+      }
+      const guess = Number(text);
+      if (guess < 1 || guess > highest) {
+        show("gameMsg", "Please enter a number between 1 and " + highest + ".", true);
+        return;
+      }
+
+      attempts++;
+      document.getElementById("attemptsLeft").textContent = maxAttempts - attempts;
+      document.getElementById("guess").value = "";
+
+      if (guess === secret) {
+        const score = calculateScore(attempts);
+        totalScore += score;
+        if (score > bestScore) bestScore = score;
+        show("gameMsg", "Correct! You got it in " + attempts + " attempt(s). Score: " + score, false);
+        endRound();
+      } else if (attempts >= maxAttempts) {
+        show("gameMsg", "Out of attempts. The number was " + secret + ".", true);
+        endRound();
+      } else if (guess < secret) {
+        show("gameMsg", "Too low! Try again.", false);
+      } else {
+        show("gameMsg", "Too high! Try again.", false);
+      }
+      document.getElementById("totalScore").textContent = totalScore;
+      document.getElementById("bestScore").textContent = bestScore;
+    }
+
+    document.getElementById("startBtn").addEventListener("click", startRound);
+    document.getElementById("againBtn").addEventListener("click", startRound);
+    document.getElementById("guessBtn").addEventListener("click", makeGuess);
+    document.getElementById("guess").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") makeGuess();
+    });
+
+    // ---------- Word Counter ----------
+    function analyzeText(text) {
+      const report = document.getElementById("report");
+      report.innerHTML = "";
+
+      // lowercase, remove punctuation, split into words
+      const words = text.toLowerCase().replace(/[^\w\s']/g, "").split(/\s+/).filter(w => w !== "");
+      if (words.length === 0) {
+        show("wordMsg", "The text is empty, so there is nothing to count.", true);
+        return;
+      }
+
+      const counts = {};
+      let longest = "";
+      words.forEach(function (word) {
+        counts[word] = (counts[word] || 0) + 1;
+        if (word.length > longest.length) longest = word;
+      });
+
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+      show("wordMsg",
+        "Total words: " + words.length +
+        " | Unique words: " + Object.keys(counts).length +
+        " | Longest: " + longest, false);
+
+      let html = "<table><tr><th>Top 5 words</th><th>Count</th></tr>";
+      sorted.forEach(function (item) {
+        html += "<tr><td>" + item[0] + "</td><td>" + item[1] + "</td></tr>";
+      });
+      report.innerHTML = html + "</table>";
+    }
+
+    document.getElementById("fileInput").addEventListener("change", function (e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith(".txt")) {
+        show("wordMsg", "Please choose a .txt file.", true);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = function () {
+        document.getElementById("textInput").value = reader.result;
+        analyzeText(reader.result);
+      };
+      reader.onerror = function () {
+        show("wordMsg", "Could not read that file.", true);
+      };
+      reader.readAsText(file);
+    });
+
+    document.getElementById("countBtn").addEventListener("click", function () {
+      analyzeText(document.getElementById("textInput").value);
+    });
+
+    document.getElementById("sampleBtn").addEventListener("click", function () {
+      document.getElementById("textInput").value = SAMPLE_TEXT;
+      analyzeText(SAMPLE_TEXT);
+    });
+  </script>
+</body>
+</html>
